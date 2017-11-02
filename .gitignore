@@ -1,0 +1,8 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/packages
+/.vs/TsSerializeGen/v15
+/TsSerializeGen/bin/Debug
+/TsSerializeGen/obj/Debug
