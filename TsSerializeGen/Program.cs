@@ -20,9 +20,7 @@ namespace TsSerializeGen
 
         static void Main(string[] args)
         {
-
             var asm = Assembly.LoadFile(@"D:\work\nitra\nitra\bin\Debug\Stage1\Nitra.ClientServer.Messages.dll");
-                  
 
             var types = asm.GetExportedTypes().Where(x => x.GetProperties(BindingFlags.Public | BindingFlags.Instance)
                                                            .FirstOrDefault(a => a.Name == "MsgId" && a.PropertyType == typeof(short)) != null)
@@ -42,14 +40,12 @@ namespace TsSerializeGen
 
             var enums = asm.GetExportedTypes()
                 .Where(x => x.IsEnum);
-              
-            
 
             using (var outFile = new StreamWriter(File.Create("NitraMessages.ts")))
             {
                 //outFile.WriteLine(string.Join(", ", types.SelectMany(x => x.props).Select(x => x.type).Distinct()));
                 outFile.WriteLine(@"
-import {SerializeString,SerializeType, SerializeInt32, SerializeArr
+import {SerializeString, SerializeType, SerializeMessage, SerializeInt32, SerializeArr
     , SerializeBoolean, SerializeInt16, SerializeInt64, SerializeUInt32
     , SerializeUInt16, SerializeByte, SerializeFloat, SerializeChar, SerializeDouble} from './serializers';
 
@@ -174,7 +170,9 @@ export function Serialize(msg: Message): Buffer {{
                 {
                     var ser = string.Join("\r\n,", typeDict[t].props
                                              .Select(a => $"{GetFun($"{pName}.{a.name}", a.type)}"));
-                    var res = $"SerializeType({pName}.MsgId\r\n, [{ser}])";
+                    var res = t.IsValueType 
+                                ? $"SerializeType([{ser}])" 
+                                : $"SerializeMessage({pName}.MsgId\r\n, [{ser}])";
                     return res;
                     
                 }
