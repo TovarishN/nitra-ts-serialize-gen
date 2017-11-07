@@ -144,8 +144,9 @@ export function Serialize(msg: Message): Buffer {{
                                 if (obj == null)
                                     obj = FormatterServices.GetUninitializedObject(x);
                                 var value = x.GetProperty("MsgId").GetValue(obj);
-                                var props = x.GetFields(BindingFlags.Instance | BindingFlags.Public)
+                                var props = x.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly )
                                                     .Select(a => (name: a.Name, type: a.FieldType));
+                                                    
                                 return (type: x, typeName: x.Name + (x.IsNestedPublic ? $"_{x.DeclaringType.Name}" : ""), MsgId: (short)value, props: props);
                             });
 
@@ -206,10 +207,10 @@ export function Serialize(msg: Message): Buffer {{
                 }
                 else if (typeDict.ContainsKey(t))
                 {
-                    var baseProps = t.BaseType.GetFields(BindingFlags.Instance | BindingFlags.Public)
+                    var baseProps = t.BaseType.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
                                                     .Select(a => (name: a.Name, type: a.FieldType));
 
-                    var ser = string.Join("\r\n,", baseProps.Concat(typeDict[t].props)
+                    var ser = string.Join("\r\n,", baseProps.Concat(typeDict[t].props).Distinct()
                                              .Select(a => $"{GetFun($"{pName}.{a.name}", a.type)}"));
                     var res = t.IsValueType 
                                 ? $"SerializeType([{ser}])" 
