@@ -18,7 +18,7 @@ namespace TsSerializeGen
             return (fi.FieldType.Name, fi.FieldType.IsGenericType ? fi.FieldType.GenericTypeArguments[0].Name : "");
         }
 
-        static void Main(string[] args)
+        static void GenerateSerializer()
         {
             var asm = Assembly.LoadFile(@"D:\work\nitra\nitra\bin\Debug\Stage1\Nitra.ClientServer.Messages.dll");
 
@@ -44,12 +44,7 @@ namespace TsSerializeGen
             using (var outFile = new StreamWriter(File.Create("NitraMessages.ts")))
             {
                 //outFile.WriteLine(string.Join(", ", types.SelectMany(x => x.props).Select(x => x.type).Distinct()));
-                outFile.WriteLine(@"
-import {SerializeString, SerializeType, SerializeMessage, SerializeInt32, SerializeArr
-    , SerializeBoolean, SerializeInt16, SerializeInt64, SerializeUInt32
-    , SerializeUInt16, SerializeByte, SerializeFloat, SerializeChar, SerializeDouble} from './serializers';
-
-export interface SolutionId { Value: number; }
+                outFile.WriteLine(@"export interface SolutionId { Value: number; }
 export interface ProjectId { Value: number; }
 export interface FileId { Value: number; }
 export interface FileVersion { Value: number; }
@@ -93,7 +88,8 @@ export enum PropertyKind { Simple,DependentIn, DependentOut, DependentInOut, Ast
 ");
                 outFile.WriteLine($"export type Message = {string.Join(" | ", types.Select(x => x.typeName))};");
 
-                enums.ForEach(x => {
+                enums.ForEach(x =>
+                {
                     outFile.Write($"export enum {x.Name} {{ ");
                     outFile.Write(string.Join(", ", x.GetFields().Where(a => !a.IsInitOnly).Select(a => a.Name)));
                     outFile.Write($" }}\r\n");
@@ -101,15 +97,25 @@ export enum PropertyKind { Simple,DependentIn, DependentOut, DependentInOut, Ast
 
                 types.ForEach(x =>
                 {
-                outFile.Write($@"export interface {x.typeName} {{ ");
+                    outFile.Write($@"export interface {x.typeName} {{ ");
                     outFile.Write($@"MsgId: {x.MsgId}; ");
                     outFile.Write(string.Join("", x.props.Select(a => $"{a.name}: {GetJsTypeName(a.type)}; ")));
                     outFile.Write(@"}
 ");
                 });
 
+            }
 
-                outFile.Write($@"
+            using (var outFile = new StreamWriter(File.Create("NitraSerialize.ts")))
+            {
+
+                outFile.Write(@"import {Message} from './NitraMessages';
+import {SerializeString, SerializeType, SerializeMessage, SerializeInt32, SerializeArr
+    , SerializeBoolean, SerializeInt16, SerializeInt64, SerializeUInt32
+    , SerializeUInt16, SerializeByte, SerializeFloat, SerializeChar, SerializeDouble} from './serializers';
+");
+
+                    outFile.Write($@"
 export function Serialize(msg: Message): Buffer {{
     switch (msg.MsgId) {{
 ");
@@ -123,6 +129,38 @@ export function Serialize(msg: Message): Buffer {{
                 outFile.Write("default: return Buffer.alloc(0);\r\n");
                 outFile.Write("}\r\n}\r\n");
             }
+        }
+
+        static void GenerateDeserializer()
+        {
+            var asm = Assembly.LoadFile(@"D:\work\nitra\nitra\bin\Debug\Stage1\Nitra.ClientServer.Messages.dll");
+
+            var types = asm.GetExportedTypes().Where(x => x.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                                                           .FirstOrDefault(a => a.Name == "MsgId" && a.PropertyType == typeof(short)) != null)
+                                              .Where(x => !x.IsAbstract)
+                            .Select(x =>
+                            {
+                                var obj = Create(x);
+                                if (obj == null)
+                                    obj = FormatterServices.GetUninitializedObject(x);
+                                var value = x.GetProperty("MsgId").GetValue(obj);
+                                var props = x.GetFields(BindingFlags.Instance | BindingFlags.Public)
+                                                    .Select(a => (name: a.Name, type: a.FieldType));
+                                return (type: x, typeName: x.Name + (x.IsNestedPublic ? $"_{x.DeclaringType.Name}" : ""), MsgId: (short)value, props: props);
+                            });
+
+            typeDict = types.ToDictionary(x => x.type);
+
+            var enums = asm.GetExportedTypes()
+                .Where(x => x.IsEnum);
+
+
+
+        }
+        static void Main(string[] args)
+        {
+            GenerateSerializer();
+            GenerateDeserializer();
         }
 
         private static string GetSerializer(Type type)
@@ -168,13 +206,77 @@ export function Serialize(msg: Message): Buffer {{
                 }
                 else if (typeDict.ContainsKey(t))
                 {
-                    var ser = string.Join("\r\n,", typeDict[t].props
+                    var baseProps = t.BaseType.GetFields(BindingFlags.Instance | BindingFlags.Public)
+                                                    .Select(a => (name: a.Name, type: a.FieldType));
+
+                    var ser = string.Join("\r\n,", baseProps.Concat(typeDict[t].props)
                                              .Select(a => $"{GetFun($"{pName}.{a.name}", a.type)}"));
                     var res = t.IsValueType 
                                 ? $"SerializeType([{ser}])" 
                                 : $"SerializeMessage({pName}.MsgId\r\n, [{ser}])";
                     return res;
                     
+                }
+                else if (new[] { "FileChange", "ObjectDescriptor", "ContentDescriptor", "CompletionElem" }.Contains(t.Name))
+                {
+                    return $"Serialize({pName})";
+                }
+                return "Error!!!";
+            }
+
+            return $"return {GetFun("msg", type)};\r\n";
+        }
+
+        private static string GetDeSerializer(Type type)
+        {
+            string GetFun(string pName, Type t)
+            {
+                if (t == typeof(string)) return $"DeSerializeString";
+                else if (t == typeof(short)) return $"DeSerializeInt16";
+                else if (t == typeof(ushort)) return $"DeSerializeUInt16";
+                else if (t == typeof(int)) return $"DeSerializeInt32";
+                else if (t == typeof(uint)) return $"DeSerializeUInt32";
+                else if (t == typeof(float)) return $"DeSerializeFloat";
+                else if (t == typeof(double)) return $"DeSerializeDouble";
+                else if (t == typeof(char)) return $"DeSerializeChar";
+                else if (t == typeof(sbyte)
+                        || t == typeof(byte)) return $"DeSerializeByte";
+
+                else if (t == typeof(long)
+                        || t == typeof(ulong)) return $"DeSerializeInt64";
+
+                else if (t == typeof(bool)) return $"DeSerializeBoolean";
+
+                else if (new[] { "SolutionId"
+                                , "FileId"
+                                , "ProjectId"
+                                , "FileVersion" }
+                        .Contains(t.Name)) return $"SerializeInt32({pName}.Value)";
+
+                else if (t.IsEnum) return $"DeSerializeInt32(<{t.Name}>{pName})";
+
+                else if (t.IsArray
+                    || t.Name == "ImmutableArray`1"
+                    || t.Name == "list`1")
+                {
+                    var ser = t.IsArray
+                            ? GetFun($"item", t.GetElementType())
+                            : typeDict.ContainsKey(t.GenericTypeArguments[0])
+                                    ? "Serialize(item)"
+                                    : GetFun($"item", t.GenericTypeArguments[0]);
+
+                    var ret = $@"SerializeArr({pName}.map(item => {ser}))";
+                    return ret;
+                }
+                else if (typeDict.ContainsKey(t))
+                {
+                    var ser = string.Join("\r\n,", typeDict[t].props
+                                             .Select(a => $"{GetFun($"{pName}.{a.name}", a.type)}"));
+                    var res = t.IsValueType
+                                ? $"SerializeType([{ser}])"
+                                : $"SerializeMessage({pName}.MsgId\r\n, [{ser}])";
+                    return res;
+
                 }
                 else if (new[] { "FileChange", "ObjectDescriptor", "ContentDescriptor", "CompletionElem" }.Contains(t.Name))
                 {
