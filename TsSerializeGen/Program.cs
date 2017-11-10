@@ -31,7 +31,7 @@ namespace TsSerializeGen
                                 if (obj == null)
                                     obj = FormatterServices.GetUninitializedObject(x);
                                 var value = x.GetProperty("MsgId").GetValue(obj);
-                                var props = x.GetFields(BindingFlags.Instance | BindingFlags.Public)
+                                var props = x.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
                                                     .Select(a => (name: a.Name, type: a.FieldType));
                                 return (type: x, typeName: x.Name + (x.IsNestedPublic ? $"_{x.DeclaringType.Name}" : ""), MsgId: (short)value, props: props);
                             });
@@ -99,43 +99,47 @@ export enum PropertyKind { Simple,DependentIn, DependentOut, DependentInOut, Ast
                 {
                     outFile.Write($@"export interface {x.typeName} {{ ");
                     outFile.Write($@"MsgId: {x.MsgId}; ");
-                    outFile.Write(string.Join("", x.props.Select(a => $"{a.name}: {GetJsTypeName(a.type)}; ")));
+                    outFile.Write(string.Join("", x.type.BaseType.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
+                                                             .Select(a => (name: a.Name, type: a.FieldType))
+                                                    .Concat(x.props).Select(a => $"{a.name}: {GetJsTypeName(a.type)}; ")));
                     outFile.Write(@"}
 ");
                 });
 
             }
 
-            using (var outFile = new StreamWriter(File.Create("NitraSerialize.ts")))
+            using (var serFile = new StreamWriter(File.Create("NitraSerialize.ts")))
             {
 
-                outFile.Write(@"import {Message} from './NitraMessages';
+                serFile.Write(@"import {Message} from './NitraMessages';
 import {SerializeString, SerializeType, SerializeMessage, SerializeInt32, SerializeArr
     , SerializeBoolean, SerializeInt16, SerializeInt64, SerializeUInt32
     , SerializeUInt16, SerializeByte, SerializeFloat, SerializeChar, SerializeDouble} from './serializers';
 ");
 
-                    outFile.Write($@"
+                    serFile.Write($@"
 export function Serialize(msg: Message): Buffer {{
     switch (msg.MsgId) {{
 ");
                 types.ForEach(x =>
                 {
-                    outFile.WriteLine($@"case {x.MsgId}: {{ // {x.typeName}");
-                    outFile.Write(string.Join("", GetSerializer(x.type)));
-                    outFile.Write(@"}
+                    serFile.WriteLine($@"case {x.MsgId}: {{ // {x.typeName}");
+                    serFile.Write(string.Join("", GetSerializer(x.type)));
+                    serFile.Write(@"}
 ");
                 });
-                outFile.Write("default: return Buffer.alloc(0);\r\n");
-                outFile.Write("}\r\n}\r\n");
+                serFile.Write("default: return Buffer.alloc(0);\r\n");
+                serFile.Write("}\r\n}\r\n");
             }
+
+
         }
 
         static void GenerateDeserializer()
         {
             var asm = Assembly.LoadFile(@"D:\work\nitra\nitra\bin\Debug\Stage1\Nitra.ClientServer.Messages.dll");
 
-            var types = asm.GetExportedTypes().Where(x => x.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            var types = asm.GetExportedTypes().Where(x => x.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
                                                            .FirstOrDefault(a => a.Name == "MsgId" && a.PropertyType == typeof(short)) != null)
                                               .Where(x => !x.IsAbstract)
                             .Select(x =>
@@ -155,12 +159,35 @@ export function Serialize(msg: Message): Buffer {{
             var enums = asm.GetExportedTypes()
                 .Where(x => x.IsEnum);
 
+            using (var deSerFile = new StreamWriter(File.Create("NitraDeSerialize.ts")))
+            {
 
+                deSerFile.Write(@"import * as Msg from './NitraMessages';
+import Int64 = require('node-int64');
+export type DesFun = (buf: Buffer, stack: DesFun[]) => void;
+function cast<To extends Msg.Message>(obj: Msg.Message) : To {
+    return <To>obj;
+}
+");
 
+                deSerFile.Write($@"
+export function GetDeserializer(msg: Msg.Message): DesFun[] {{
+    let retStack: DesFun[] = [];
+	switch (msg.MsgId) {{
+");
+                types.ForEach(x =>
+                {
+                    deSerFile.WriteLine($@"case {x.MsgId}: {{ // {x.typeName}");
+                    deSerFile.Write(string.Join("", GetDeSerializer(x.type)));
+                    deSerFile.Write(@"}
+");
+                });
+                deSerFile.Write("}\r\n}\r\n");
+            }
         }
         static void Main(string[] args)
         {
-            GenerateSerializer();
+            //GenerateSerializer();
             GenerateDeserializer();
         }
 
@@ -210,7 +237,7 @@ export function Serialize(msg: Message): Buffer {{
                     var baseProps = t.BaseType.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
                                                     .Select(a => (name: a.Name, type: a.FieldType));
 
-                    var ser = string.Join("\r\n,", baseProps.Concat(typeDict[t].props).Distinct()
+                    var ser = string.Join("\r\n,", baseProps.Concat(typeDict[t].props)//.Distinct()
                                              .Select(a => $"{GetFun($"{pName}.{a.name}", a.type)}"));
                     var res = t.IsValueType 
                                 ? $"SerializeType([{ser}])" 
@@ -232,61 +259,86 @@ export function Serialize(msg: Message): Buffer {{
         {
             string GetFun(string pName, Type t)
             {
-                if (t == typeof(string)) return $"DeSerializeString";
-                else if (t == typeof(short)) return $"DeSerializeInt16";
-                else if (t == typeof(ushort)) return $"DeSerializeUInt16";
-                else if (t == typeof(int)) return $"DeSerializeInt32";
-                else if (t == typeof(uint)) return $"DeSerializeUInt32";
-                else if (t == typeof(float)) return $"DeSerializeFloat";
-                else if (t == typeof(double)) return $"DeSerializeDouble";
-                else if (t == typeof(char)) return $"DeSerializeChar";
+                if (t == typeof(string)) return $"(buf, stack) => stack.push((bu, st) => {{ {pName} = bu.toString(); }} ";
+                else if (t == typeof(short)) return $"(buf, stack) => {{ {pName} = buf.readInt16LE(0); }}";
+                else if (t == typeof(ushort)) return $"(buf, stack) => {{ {pName} = buf.readInt16LE(0); }}";
+                else if (t == typeof(int)) return $"(buf, stack) => {{ {pName} = buf.readInt32LE(0); }}";
+                else if (t == typeof(uint)) return $"(buf, stack) => {{ {pName} = buf.readInt32LE(0); }}";
+                else if (t == typeof(float)) return $"(buf, stack) => {{ {pName} = buf.readFloatLE(0); }}";
+                else if (t == typeof(double)) return $"(buf, stack) => {{ {pName} = buf.readDoubleLE(0); }}";
+                else if (t == typeof(char)) return $"(buf, stack) => {{ {pName} = buf.toString(); }}";
                 else if (t == typeof(sbyte)
-                        || t == typeof(byte)) return $"DeSerializeByte";
+                        || t == typeof(byte)) return $"(buf, stack) => {{ {pName} = buf.readUInt8(0); }}";
 
                 else if (t == typeof(long)
-                        || t == typeof(ulong)) return $"DeSerializeInt64";
+                        || t == typeof(ulong)) return $"(buf, stack) => {{ {pName} = new Int64(buf).valueOf() }}";
 
-                else if (t == typeof(bool)) return $"DeSerializeBoolean";
+                else if (t == typeof(bool)) return $"(buf, stack) => {{ {pName} = buf.readUInt8(0)[0] === 1 }}";
 
                 else if (new[] { "SolutionId"
                                 , "FileId"
                                 , "ProjectId"
                                 , "FileVersion" }
-                        .Contains(t.Name)) return $"SerializeInt32({pName}.Value)";
+                        .Contains(t.Name)) return $"(buf, stack) => {{ {pName} = {{ Value: buf.readInt32LE(0) }}; }}";
 
-                else if (t.IsEnum) return $"DeSerializeInt32(<{t.Name}>{pName})";
+                else if (t.IsEnum) return $"(buf, stack) => {{ {pName} = <Msg.{t.Name}>buf.readInt32LE(0); }}";
 
                 else if (t.IsArray
                     || t.Name == "ImmutableArray`1"
                     || t.Name == "list`1")
                 {
-                    var ser = t.IsArray
-                            ? GetFun($"item", t.GetElementType())
-                            : typeDict.ContainsKey(t.GenericTypeArguments[0])
-                                    ? "Serialize(item)"
-                                    : GetFun($"item", t.GenericTypeArguments[0]);
+                    var arrType = t.IsArray ? t.GetElementType() : t.GenericTypeArguments[0];
 
-                    var ret = $@"SerializeArr({pName}.map(item => {ser}))";
-                    return ret;
+                    if(typeDict.ContainsKey(arrType))
+                    {
+                        var ret = $@"(buf,stack) => {{
+let length = buf.readInt32LE(0);
+				{pName} = [];
+				for (let i = 0; i < length; i++) {{
+                    {pName}.push(<Msg.{typeDict[arrType].typeName}>{{ MsgId: {typeDict[arrType].MsgId} }});
+					stack.push(...GetDeserializer({pName}[i]));
+				}} }}
+";
+                        return ret;
+                    }
+                    else
+                    {
+                        var ret = $@"(buf,stack) => {{
+let length = buf.readInt32LE(0);
+				{pName} = [];
+				for (let i = 0; i < length; i++) {{
+					stack.push({GetFun($"{pName}[i]", arrType)});
+				}} }}
+";
+                        return ret;
+                    }
+
                 }
                 else if (typeDict.ContainsKey(t))
                 {
-                    var ser = string.Join("\r\n,", typeDict[t].props
-                                             .Select(a => $"{GetFun($"{pName}.{a.name}", a.type)}"));
-                    var res = t.IsValueType
-                                ? $"SerializeType([{ser}])"
-                                : $"SerializeMessage({pName}.MsgId\r\n, [{ser}])";
-                    return res;
+                    var baseProps = t.BaseType.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
+                                                   .Select(a => (name: a.Name, type: a.FieldType));
 
+                    var ser = string.Join("\r\n", baseProps.Concat(typeDict[t].props)
+                                             .Select(a => {
+                                                     var ret = typeDict.ContainsKey(a.type)
+                                                         ? $"{pName}.{a.name} = cast<Msg.{typeDict[a.type].typeName}>(<Msg.Message>{{ MsgId: {typeDict[t].MsgId} }}); retStack.push(...GetDeserializer({pName}.{a.name}))"
+                                                         : $"{GetFun($"{pName}.{a.name}", a.type)}";
+                                                 //$"{GetFun($"{pName}.{a.name}", a.type)}";
+
+                                                 //var ret = $"retStack.push(...GetDeserializer({pName}.{a.name}))";
+                                                 return ret;
+                                             }));
+                    return ser;
                 }
                 else if (new[] { "FileChange", "ObjectDescriptor", "ContentDescriptor", "CompletionElem" }.Contains(t.Name))
                 {
-                    return $"Serialize({pName})";
+                    return $"...GetDeserializer({pName})";
                 }
                 return "Error!!!";
             }
 
-            return $"return {GetFun("msg", type)};\r\n";
+            return $"retStack.push({GetFun("msg", type)});\r\n return retStack;\r\n";
         }
 
         private static object GetJsTypeName(Type type)
