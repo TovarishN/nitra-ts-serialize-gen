@@ -1,11 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.Serialization;
 using System.Text;
 using System.Threading.Tasks;
+
 
 namespace TsSerializeGen
 {
@@ -20,7 +22,8 @@ namespace TsSerializeGen
 
         static void GenerateSerializer()
         {
-            var asm = Assembly.LoadFile(@"D:\work\nitra\nitra\bin\Debug\Stage1\Nitra.ClientServer.Messages.dll");
+            var dllPath = ConfigurationSettings.AppSettings["MessageDllPath"];
+            var asm = Assembly.LoadFile(dllPath);
 
             var types = asm.GetExportedTypes().Where(x => x.GetProperties(BindingFlags.Public | BindingFlags.Instance)
                                                            .FirstOrDefault(a => a.Name == "MsgId" && a.PropertyType == typeof(short)) != null)
@@ -43,8 +46,7 @@ namespace TsSerializeGen
 
             using (var outFile = new StreamWriter(File.Create("NitraMessages.ts")))
             {
-                //outFile.WriteLine(string.Join(", ", types.SelectMany(x => x.props).Select(x => x.type).Distinct()));
-                outFile.WriteLine(@"export interface SolutionId { Value: number; }
+                outFile.Write(@"export interface SolutionId { Value: number; }
 export interface ProjectId { Value: number; }
 export interface FileId { Value: number; }
 export interface FileVersion { Value: number; }
@@ -57,36 +59,10 @@ export type ObjectDescriptor = Ast_ObjectDescriptor | AstList_ObjectDescriptor |
 
 export type ContentDescriptor = AstItems_ContentDescriptor | Fail_ContentDescriptor | Items_ContentDescriptor | Members_ContentDescriptor;
 export type CompletionElem = Literal_CompletionElem | Symbol_CompletionElem;
-export type Message = CheckVersion_ClientMessage | SolutionStartLoading_ClientMessage | SolutionLoaded_ClientMessage | SolutionUnloaded_ClientMessage 
-                    | ProjectStartLoading_ClientMessage | ProjectLoaded_ClientMessage | ProjectUnloaded_ClientMessage | ProjectRename_ClientMessage 
-                    | ProjectReferenceLoaded_ClientMessage | ProjectReferenceUnloaded_ClientMessage | ReferenceLoaded_ClientMessage | ReferenceUnloaded_ClientMessage 
-                    | FileLoaded_ClientMessage | FileReparse_ClientMessage | FileUnloaded_ClientMessage | FileRenamed_ClientMessage | FileInMemoryLoaded_ClientMessage 
-                    | FileActivated_ClientMessage | FileDeactivated_ClientMessage | FileChanged_ClientMessage | FileChangedBatch_ClientMessage | PrettyPrint_ClientMessage 
-                    | CompleteWord_ClientMessage | CompleteWordDismiss_ClientMessage | FindSymbolReferences_ClientMessage | FindSymbolDefinitions_ClientMessage | ParseTreeReflection_ClientMessage 
-                    | GetObjectContent_ClientMessage | GetObjectGraph_ClientMessage | AttachDebugger_ClientMessage | GetLibsMetadata_ClientMessage | GetLibsSyntaxModules_ClientMessage 
-                    | GetLibsProjectSupports_ClientMessage | GetFileExtensions_ClientMessage | SetCaretPos_ClientMessage | GetHint_ClientMessage | GetSubHint_ClientMessage 
-                    | FindDeclarations_ClientMessage | Shutdown_ClientMessage | FindSymbolDefinitions_ServerMessage | FindSymbolReferences_ServerMessage 
-                    | ParseTreeReflection_ServerMessage | ObjectContent_ServerMessage | LibsMetadata_ServerMessage | LibsSyntaxModules_ServerMessage | LibsProjectSupports_ServerMessage 
-                    | FileExtensions_ServerMessage | SubHint_ServerMessage | LanguageLoaded_AsyncServerMessage | OutliningCreated_AsyncServerMessage | KeywordsHighlightingCreated_AsyncServerMessage 
-                    | MatchedBrackets_AsyncServerMessage | SymbolsHighlightingCreated_AsyncServerMessage | ProjectLoadingMessages_AsyncServerMessage | ParsingMessages_AsyncServerMessage 
-                    | MappingMessages_AsyncServerMessage | SemanticAnalysisMessages_AsyncServerMessage | SemanticAnalysisDone_AsyncServerMessage | PrettyPrintCreated_AsyncServerMessage 
-                    | ReflectionStructCreated_AsyncServerMessage | RefreshReferencesFailed_AsyncServerMessage | RefreshProjectFailed_AsyncServerMessage | FindSymbolReferences_AsyncServerMessage 
-                    | Hint_AsyncServerMessage | Exception_AsyncServerMessage | FoundDeclarations_AsyncServerMessage | CompleteWord_AsyncServerMessage | ProjectSupports | SyntaxModules 
-                    | LibMetadata | SymbolRreferences | NSpan | SpanInfo | Insert_FileChange | Delete_FileChange | Replace_FileChange | FileIdentity | FileEntries | Range | Location 
-                    | DeclarationInfo | SymbolLocation | CompilerMessage | ProjectSupport | Config | DynamicExtensionInfo | LanguageInfo | SpanClassInfo | OutliningInfo | Literal_CompletionElem 
-                    | Symbol_CompletionElem | ReflectionInfo | ParseTreeReflectionStruct | GrammarDescriptor | LibReference | Fail_ContentDescriptor | Members_ContentDescriptor 
-                    | Items_ContentDescriptor | AstItems_ContentDescriptor | Unknown_ObjectDescriptor | Null_ObjectDescriptor | NotEvaluated_ObjectDescriptor | Ast_ObjectDescriptor 
-                    | Symbol_ObjectDescriptor | Object_ObjectDescriptor | AstList_ObjectDescriptor | Seq_ObjectDescriptor | String_ObjectDescriptor | Int16_ObjectDescriptor 
-                    | Int32_ObjectDescriptor | Int64_ObjectDescriptor | Char_ObjectDescriptor | SByte_ObjectDescriptor | UInt16_ObjectDescriptor | UInt32_ObjectDescriptor 
-                    | UInt64_ObjectDescriptor | Byte_ObjectDescriptor | Single_ObjectDescriptor | Double_ObjectDescriptor | Boolean_ObjectDescriptor | Parsed_ObjectDescriptor 
-                    | PropertyDescriptor | MatchBrackets | VersionedPos;
-export enum PrettyPrintState { Disabled,Text, Html }
-export enum CompilerMessageSource { ProjectLoading,Parsing, Mapping, SemanticAnalysis }
-export enum CompilerMessageType { FatalError,Error, Warning, Hint }
-export enum ReflectionKind { Normal,Recovered, Ambiguous, Deleted }
-export enum PropertyKind { Simple,DependentIn, DependentOut, DependentInOut, Ast }
 ");
-                outFile.WriteLine($"export type Message = {string.Join(" | ", types.Select(x => x.typeName))};");
+
+                outFile.WriteLine($@"export type Message = {string.Join("\r\n| ", types.Buffer(4)
+                                                                                    .Select(x => string.Join(" | ", x.Select(a => a.typeName))))};");
 
                 enums.ForEach(x =>
                 {
@@ -117,7 +93,7 @@ import {SerializeString, SerializeType, SerializeMessage, SerializeInt32, Serial
     , SerializeUInt16, SerializeByte, SerializeFloat, SerializeChar, SerializeDouble} from './serializers';
 ");
 
-                    serFile.Write($@"
+                serFile.Write($@"
 export function Serialize(msg: Message): Buffer {{
     switch (msg.MsgId) {{
 ");
@@ -131,13 +107,12 @@ export function Serialize(msg: Message): Buffer {{
                 serFile.Write("default: return Buffer.alloc(0);\r\n");
                 serFile.Write("}\r\n}\r\n");
             }
-
-
         }
 
         static void GenerateDeserializer()
         {
-            var asm = Assembly.LoadFile(@"D:\work\nitra\nitra\bin\Debug\Stage1\Nitra.ClientServer.Messages.dll");
+            var dllPath = ConfigurationSettings.AppSettings["MessageDllPath"];
+            var asm = Assembly.LoadFile(dllPath);
 
             var types = asm.GetExportedTypes().Where(x => x.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
                                                            .FirstOrDefault(a => a.Name == "MsgId" && a.PropertyType == typeof(short)) != null)
@@ -148,9 +123,9 @@ export function Serialize(msg: Message): Buffer {{
                                 if (obj == null)
                                     obj = FormatterServices.GetUninitializedObject(x);
                                 var value = x.GetProperty("MsgId").GetValue(obj);
-                                var props = x.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly )
+                                var props = x.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
                                                     .Select(a => (name: a.Name, type: a.FieldType));
-                                                    
+
                                 return (type: x, typeName: x.Name + (x.IsNestedPublic ? $"_{x.DeclaringType.Name}" : ""), MsgId: (short)value, props: props);
                             });
 
@@ -184,7 +159,7 @@ export function GetDeserializer(msg: Msg.Message): DesFun[] {{
         }
         static void Main(string[] args)
         {
-            //GenerateSerializer();
+            GenerateSerializer();
             GenerateDeserializer();
         }
 
@@ -192,40 +167,40 @@ export function GetDeserializer(msg: Msg.Message): DesFun[] {{
         {
             string GetFun(string pName, Type t)
             {
-                if (t == typeof(string))        return $"SerializeString({pName})";
-                else if (t == typeof(short))    return $"SerializeInt16({pName})";
-                else if (t == typeof(ushort))   return $"SerializeUInt16({pName})";
-                else if (t == typeof(int))      return $"SerializeInt32({pName})";
-                else if (t == typeof(uint))     return $"SerializeUInt32({pName})";
-                else if (t == typeof(float))    return $"SerializeFloat({pName})";
-                else if (t == typeof(double))   return $"SerializeDouble({pName})";
-                else if (t == typeof(char))     return $"SerializeChar({pName})";
-                else if (t == typeof(sbyte) 
-                        || t == typeof(byte))   return $"SerializeByte({pName})";
+                if (t == typeof(string)) return $"SerializeString({pName})";
+                else if (t == typeof(short)) return $"SerializeInt16({pName})";
+                else if (t == typeof(ushort)) return $"SerializeUInt16({pName})";
+                else if (t == typeof(int)) return $"SerializeInt32({pName})";
+                else if (t == typeof(uint)) return $"SerializeUInt32({pName})";
+                else if (t == typeof(float)) return $"SerializeFloat({pName})";
+                else if (t == typeof(double)) return $"SerializeDouble({pName})";
+                else if (t == typeof(char)) return $"SerializeChar({pName})";
+                else if (t == typeof(sbyte)
+                        || t == typeof(byte)) return $"SerializeByte({pName})";
 
-                else if (t == typeof(long) 
-                        || t == typeof(ulong))  return $"SerializeInt64({pName})";
+                else if (t == typeof(long)
+                        || t == typeof(ulong)) return $"SerializeInt64({pName})";
 
-                else if (t == typeof(bool))     return $"SerializeBoolean({pName})";
+                else if (t == typeof(bool)) return $"SerializeBoolean({pName})";
 
                 else if (new[] { "SolutionId"
                                 , "FileId"
                                 , "ProjectId"
                                 , "FileVersion" }
-                        .Contains(t.Name))                return $"SerializeInt32({pName}.Value)";
+                        .Contains(t.Name)) return $"SerializeInt32({pName}.Value)";
 
-                else if (t.IsEnum)                        return $"SerializeInt32(<number>{pName})";
+                else if (t.IsEnum) return $"SerializeInt32(<number>{pName})";
 
-                else if (t.IsArray 
-                    || t.Name == "ImmutableArray`1" 
+                else if (t.IsArray
+                    || t.Name == "ImmutableArray`1"
                     || t.Name == "list`1")
                 {
-                    var ser = t.IsArray 
+                    var ser = t.IsArray
                             ? GetFun($"item", t.GetElementType())
-                            : typeDict.ContainsKey(t.GenericTypeArguments[0]) 
+                            : typeDict.ContainsKey(t.GenericTypeArguments[0])
                                     ? "Serialize(item)"
                                     : GetFun($"item", t.GenericTypeArguments[0]);
-                   
+
                     var ret = $@"SerializeArr({pName}.map(item => {ser}))";
                     return ret;
                 }
@@ -236,11 +211,11 @@ export function GetDeserializer(msg: Msg.Message): DesFun[] {{
 
                     var ser = string.Join("\r\n,", baseProps.Concat(typeDict[t].props)//.Distinct()
                                              .Select(a => $"{GetFun($"{pName}.{a.name}", a.type)}"));
-                    var res = t.IsValueType 
-                                ? $"SerializeType([{ser}])" 
+                    var res = t.IsValueType
+                                ? $"SerializeType([{ser}])"
                                 : $"SerializeMessage({pName}.MsgId\r\n, [{ser}])";
                     return res;
-                    
+
                 }
                 else if (new[] { "FileChange", "ObjectDescriptor", "ContentDescriptor", "CompletionElem" }.Contains(t.Name))
                 {
@@ -286,7 +261,7 @@ export function GetDeserializer(msg: Msg.Message): DesFun[] {{
                 {
                     var arrType = t.IsArray ? t.GetElementType() : t.GenericTypeArguments[0];
 
-                    if(typeDict.ContainsKey(arrType))
+                    if (typeDict.ContainsKey(arrType))
                     {
                         var ret = $@"retStack.push((buf,stack) => {{
 let length = buf.readInt32LE(0);
@@ -328,10 +303,11 @@ let length = buf.readInt32LE(0);
                                                    .Select(a => (name: a.Name, type: a.FieldType));
 
                     var ser = string.Join("\r\n", baseProps.Concat(typeDict[t].props)
-                                             .Select(a => {
-                                                     var ret = typeDict.ContainsKey(a.type)
-                                                         ? $"{pName}.{a.name} = cast<Msg.{typeDict[a.type].typeName}>(<Msg.Message>{{ MsgId: {typeDict[t].MsgId} }}); retStack.push(...GetDeserializer({pName}.{a.name}))"
-                                                         : $"{GetFun($"{pName}.{a.name}", a.type)}";
+                                             .Select(a =>
+                                             {
+                                                 var ret = typeDict.ContainsKey(a.type)
+                                                     ? $"{pName}.{a.name} = cast<Msg.{typeDict[a.type].typeName}>(<Msg.Message>{{ MsgId: {typeDict[t].MsgId} }}); retStack.push(...GetDeserializer({pName}.{a.name}))"
+                                                     : $"{GetFun($"{pName}.{a.name}", a.type)}";
                                                  //$"{GetFun($"{pName}.{a.name}", a.type)}";
 
                                                  //var ret = $"retStack.push(...GetDeserializer({pName}.{a.name}))";
