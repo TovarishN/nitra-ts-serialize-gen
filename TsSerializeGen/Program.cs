@@ -23,7 +23,7 @@ namespace TsSerializeGen
         static void GenerateSerializer()
         {
             var dllPath = ConfigurationSettings.AppSettings["MessageDllPath"];
-            var asm = Assembly.LoadFile(dllPath);
+            var asm = Assembly.LoadFrom(dllPath);
 
             var types = asm.GetExportedTypes().Where(x => x.GetProperties(BindingFlags.Public | BindingFlags.Instance)
                                                            .FirstOrDefault(a => a.Name == "MsgId" && a.PropertyType == typeof(short)) != null)
