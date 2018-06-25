@@ -139,7 +139,7 @@ export function Serialize(msg: Message): Buffer {{
 
                 deSerFile.Write(@"import * as Msg from './NitraMessages';
 import Int64 = require('node-int64');
-import { DesFun, GetStringArrayDeserializer, cast } from './deserializers';
+import { DesFun, GetStringArrayDeserializer, cast, StringDeserializer } from './deserializers';
 ");
 
                 deSerFile.Write($@"
@@ -231,7 +231,7 @@ export function GetDeserializer(msg: Msg.Message): DesFun[] {{
         {
             string GetFun(string pName, Type t)
             {
-                if (t == typeof(string)) return $"retStack.push((buf, stack) => {{   }}); retStack.push((buf, stack) => {{ {pName} = buf.toString(); }}); ";
+                if (t == typeof(string)) return $"retStack.push((buf, stack) => StringDeserializer(buf, stack, (str:string) => {{ {pName} = str; }}, () => {{ return {pName}; }})); ";
                 else if (t == typeof(short)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readInt16LE(0); }});";
                 else if (t == typeof(ushort)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readInt16LE(0); }});";
                 else if (t == typeof(int)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readInt32LE(0); }});";
