@@ -232,28 +232,28 @@ export function GetDeserializer(msg: Msg.Message): DesFun[] {{
             string GetFun(string pName, Type t)
             {
                 if (t == typeof(string)) return $"retStack.push((buf, stack) => StringDeserializer(buf, stack, (str:string) => {{ {pName} = str; }}, () => {{ return {pName}; }})); ";
-                else if (t == typeof(short)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readInt16LE(0); }});";
-                else if (t == typeof(ushort)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readInt16LE(0); }});";
-                else if (t == typeof(int)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readInt32LE(0); }});";
-                else if (t == typeof(uint)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readInt32LE(0); }});";
-                else if (t == typeof(float)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readFloatLE(0); }});";
-                else if (t == typeof(double)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readDoubleLE(0); }});";
-                else if (t == typeof(char)) return $"retStack.push((buf, stack) => {{ {pName} = buf.toString(); }});";
+                else if (t == typeof(short)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readInt16LE(0); return stack; }});";
+                else if (t == typeof(ushort)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readInt16LE(0);  return stack; }});";
+                else if (t == typeof(int)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readInt32LE(0); return stack; }});";
+                else if (t == typeof(uint)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readInt32LE(0); return stack; }});";
+                else if (t == typeof(float)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readFloatLE(0); return stack; }});";
+                else if (t == typeof(double)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readDoubleLE(0); return stack; }});";
+                else if (t == typeof(char)) return $"retStack.push((buf, stack) => {{ {pName} = buf.toString(); return stack; }});";
                 else if (t == typeof(sbyte)
-                        || t == typeof(byte)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readUInt8(0); }});";
+                        || t == typeof(byte)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readUInt8(0);  return stack; }});";
 
                 else if (t == typeof(long)
-                        || t == typeof(ulong)) return $"retStack.push((buf, stack) => {{ {pName} = new Int64(buf).valueOf() }});";
+                        || t == typeof(ulong)) return $"retStack.push((buf, stack) => {{ {pName} = new Int64(buf).valueOf(); return stack; }});";
 
-                else if (t == typeof(bool)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readUInt8(0)[0] === 1 }});";
+                else if (t == typeof(bool)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readUInt8(0)[0] === 1; return stack; }});";
 
                 else if (new[] { "SolutionId"
                                 , "FileId"
                                 , "ProjectId"
                                 , "FileVersion" }
-                        .Contains(t.Name)) return $"retStack.push((buf, stack) => {{ {pName} = {{ Value: buf.readInt32LE(0) }}; }});";
+                        .Contains(t.Name)) return $"retStack.push((buf, stack) => {{ {pName} = {{ Value: buf.readInt32LE(0) }}; return stack; }});";
 
-                else if (t.IsEnum) return $"retStack.push((buf, stack) => {{ {pName} = <Msg.{t.Name}>buf.readInt32LE(0); }});";
+                else if (t.IsEnum) return $"retStack.push((buf, stack) => {{ {pName} = <Msg.{t.Name}>buf.readInt32LE(0); return stack;}});";
 
                 else if (t.IsArray
                     || t.Name == "ImmutableArray`1"
@@ -263,35 +263,44 @@ export function GetDeserializer(msg: Msg.Message): DesFun[] {{
 
                     if (typeDict.ContainsKey(arrType))
                     {
-                        var ret = $@"retStack.push((buf,stack) => {{
-let length = buf.readInt32LE(0);
-				{pName} = [];
-				for (let i = 0; i < length; i++) {{
-                    {pName}.push(<Msg.{typeDict[arrType].typeName}>{{ MsgId: {typeDict[arrType].MsgId} }});
-					stack.push(...GetDeserializer({pName}[i]));
-				}} }});
+                        var ret = $@"
+retStack.push((buf,stack) => {{
+	let length = buf.readInt32LE(0);
+	{pName} = [];
+	for (let i = 0; i < length; i++) {{
+		{pName}.push(<Msg.{typeDict[arrType].typeName}>{{ MsgId: {typeDict[arrType].MsgId} }});
+		stack.push(...GetDeserializer({pName}[i]));
+	}}
+	return stack;
+}});
 ";
                         return ret;
                     }
                     else if (new[] { "FileChange", "ObjectDescriptor", "ContentDescriptor", "CompletionElem" }.Contains(arrType.Name))
                     {
-                        var ret = $@"retStack.push((buf,stack) => {{
-let length = buf.readInt32LE(0);
-				{pName} = [];
-				for (let i = 0; i < length; i++) {{
-					stack.push(...GetDeserializer({pName}[i]));
-				}} }});
+                        var ret = $@"
+retStack.push((buf,stack) => {{
+	let length = buf.readInt32LE(0);
+	{pName} = [];
+	for (let i = 0; i < length; i++) {{
+		stack.push(...GetDeserializer({pName}[i]));
+	}}
+	return stack;
+}});
 ";
                         return ret;
                     }
                     else
                     {
-                        var ret = $@"retStack.push((buf,stack) => {{
-let length = buf.readInt32LE(0);
-				{pName} = [];
-				for (let i = 0; i < length; i++) {{
-					stack.push(...GetStringArrayDeserializer({pName}, i));
-				}} }});
+                        var ret = $@"
+retStack.push((buf,stack) => {{
+	let length = buf.readInt32LE(0);
+	{pName} = [];
+	for (let i = 0; i < length; i++) {{
+		stack.push(...GetStringArrayDeserializer({pName}, i));
+	}}
+	return stack;
+}});
 ";
                         return ret;
                     }
