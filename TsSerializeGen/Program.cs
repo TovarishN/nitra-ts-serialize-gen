@@ -231,39 +231,45 @@ export function GetDeserializer(msg: Msg.Message): DesFun[] {{
         {
             string GetFun(string pName, Type t)
             {
-                if (t == typeof(string)) return $"retStack.push((buf, stack) => StringDeserializer(buf, stack, (str:string) => {{ {pName} = str; }}, () => {{ return {pName}; }})); ";
-                else if (t == typeof(short)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readInt16LE(0); return stack; }});";
-                else if (t == typeof(ushort)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readInt16LE(0);  return stack; }});";
-                else if (t == typeof(int)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readInt32LE(0); return stack; }});";
-                else if (t == typeof(uint)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readInt32LE(0); return stack; }});";
-                else if (t == typeof(float)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readFloatLE(0); return stack; }});";
-                else if (t == typeof(double)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readDoubleLE(0); return stack; }});";
-                else if (t == typeof(char)) return $"retStack.push((buf, stack) => {{ {pName} = buf.toString(); return stack; }});";
-                else if (t == typeof(sbyte)
-                        || t == typeof(byte)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readUInt8(0);  return stack; }});";
+				if (t == typeof(string)) return $"retStack.push((buf, stack) => StringDeserializer(buf, stack, (str:string) => {{ {pName} = str; }}, () => {{ return {pName}; }})); ";
+				else if (t == typeof(short)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readInt16LE(0); return stack; }});";
+				else if (t == typeof(ushort)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readInt16LE(0);  return stack; }});";
+				else if (t == typeof(int)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readInt32LE(0); return stack; }});";
+				else if (t == typeof(uint)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readInt32LE(0); return stack; }});";
+				else if (t == typeof(float)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readFloatLE(0); return stack; }});";
+				else if (t == typeof(double)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readDoubleLE(0); return stack; }});";
+				else if (t == typeof(char)) return $"retStack.push((buf, stack) => {{ {pName} = buf.toString(); return stack; }});";
+				else if (t == typeof(sbyte)
+						|| t == typeof(byte)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readUInt8(0);  return stack; }});";
 
-                else if (t == typeof(long)
-                        || t == typeof(ulong)) return $"retStack.push((buf, stack) => {{ {pName} = new Int64(buf).valueOf(); return stack; }});";
+				else if (t == typeof(long)
+						|| t == typeof(ulong)) return $"retStack.push((buf, stack) => {{ {pName} = new Int64(buf).valueOf(); return stack; }});";
 
-                else if (t == typeof(bool)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readUInt8(0)[0] === 1; return stack; }});";
+				else if (t == typeof(bool)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readUInt8(0)[0] === 1; return stack; }});";
 
-                else if (new[] { "SolutionId"
-                                , "FileId"
-                                , "ProjectId"
-                                , "FileVersion" }
-                        .Contains(t.Name)) return $"retStack.push((buf, stack) => {{ {pName} = {{ Value: buf.readInt32LE(0) }}; return stack; }});";
+				else if (new[] { "SolutionId"
+								, "FileId"
+								, "ProjectId"
+								, "FileVersion" }
+						.Contains(t.Name)) return $"retStack.push((buf, stack) => {{ {pName} = {{ Value: buf.readInt32LE(0) }}; return stack; }});";
 
-                else if (t.IsEnum) return $"retStack.push((buf, stack) => {{ {pName} = <Msg.{t.Name}>buf.readInt32LE(0); return stack;}});";
+				else if (t.IsEnum)
+				{
+					var ut = Enum.GetUnderlyingType(t);
+					var funName = ut.Name == "Byte" ? "readInt8" : "readInt32LE";
+					//if(t.BaseType)
+					return $"retStack.push((buf, stack) => {{ {pName} = <Msg.{t.Name}>buf.{funName}(0); return stack;}});";
+				}
 
-                else if (t.IsArray
-                    || t.Name == "ImmutableArray`1"
-                    || t.Name == "list`1")
-                {
-                    var arrType = t.IsArray ? t.GetElementType() : t.GenericTypeArguments[0];
+				else if (t.IsArray
+					|| t.Name == "ImmutableArray`1"
+					|| t.Name == "list`1")
+				{
+					var arrType = t.IsArray ? t.GetElementType() : t.GenericTypeArguments[0];
 
-                    if (typeDict.ContainsKey(arrType))
-                    {
-                        var ret = $@"
+					if (typeDict.ContainsKey(arrType))
+					{
+						var ret = $@"
 retStack.push((buf,stack) => {{
 	let length = buf.readInt32LE(0);
 	{pName} = [];
@@ -274,11 +280,11 @@ retStack.push((buf,stack) => {{
 	return stack;
 }});
 ";
-                        return ret;
-                    }
-                    else if (new[] { "FileChange", "ObjectDescriptor", "ContentDescriptor", "CompletionElem" }.Contains(arrType.Name))
-                    {
-                        var ret = $@"
+						return ret;
+					}
+					else if (new[] { "FileChange", "ObjectDescriptor", "ContentDescriptor", "CompletionElem" }.Contains(arrType.Name))
+					{
+						var ret = $@"
 retStack.push((buf,stack) => {{
 	let length = buf.readInt32LE(0);
 	{pName} = [];
@@ -288,11 +294,11 @@ retStack.push((buf,stack) => {{
 	return stack;
 }});
 ";
-                        return ret;
-                    }
-                    else
-                    {
-                        var ret = $@"
+						return ret;
+					}
+					else
+					{
+						var ret = $@"
 retStack.push((buf,stack) => {{
 	let length = buf.readInt32LE(0);
 	{pName} = [];
@@ -302,32 +308,32 @@ retStack.push((buf,stack) => {{
 	return stack;
 }});
 ";
-                        return ret;
-                    }
+						return ret;
+					}
 
-                }
-                else if (typeDict.ContainsKey(t))
-                {
-                    var baseProps = t.BaseType.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
-                                                   .Select(a => (name: a.Name, type: a.FieldType));
+				}
+				else if (typeDict.ContainsKey(t))
+				{
+					var baseProps = t.BaseType.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
+												   .Select(a => (name: a.Name, type: a.FieldType));
 
-                    var ser = string.Join("\r\n", baseProps.Concat(typeDict[t].props)
-                                             .Select(a =>
-                                             {
-                                                 var ret = typeDict.ContainsKey(a.type)
-                                                     ? $"{pName}.{a.name} = cast<Msg.{typeDict[a.type].typeName}>(<Msg.Message>{{ MsgId: {typeDict[t].MsgId} }}); retStack.push(...GetDeserializer({pName}.{a.name}))"
-                                                     : $"{GetFun($"{pName}.{a.name}", a.type)}";
-                                                 //$"{GetFun($"{pName}.{a.name}", a.type)}";
+					var ser = string.Join("\r\n", baseProps.Concat(typeDict[t].props)
+											 .Select(a =>
+											 {
+												 var ret = typeDict.ContainsKey(a.type)
+													 ? $"{pName}.{a.name} = cast<Msg.{typeDict[a.type].typeName}>(<Msg.Message>{{ MsgId: {typeDict[a.type].MsgId} }}); retStack.push(...GetDeserializer({pName}.{a.name}))"
+													 : $"{GetFun($"{pName}.{a.name}", a.type)}";
+												 //$"{GetFun($"{pName}.{a.name}", a.type)}";
 
-                                                 //var ret = $"retStack.push(...GetDeserializer({pName}.{a.name}))";
-                                                 return ret;
-                                             }));
-                    return ser;
-                }
-                else if (new[] { "FileChange", "ObjectDescriptor", "ContentDescriptor", "CompletionElem" }.Contains(t.Name))
-                {
-                    return $"retStack.push(...GetDeserializer({pName}));";
-                }
+												 //var ret = $"retStack.push(...GetDeserializer({pName}.{a.name}))";
+												 return ret;
+											 }));
+					return ser;
+				}
+				else if (new[] { "FileChange", "ObjectDescriptor", "ContentDescriptor", "CompletionElem" }.Contains(t.Name))
+				{
+					return $"retStack.push(...GetDeserializer({pName}));";
+				}
                 return "Error!!!";
             }
 
