@@ -47,9 +47,9 @@ namespace TsSerializeGen
             using (var outFile = new StreamWriter(File.Create("NitraMessages.ts")))
             {
                 outFile.Write(@"export interface SolutionId { Value: number; }
-export interface ProjectId { Value: number; }
-export interface FileId { Value: number; }
-export interface FileVersion { Value: number; }
+export type ProjectId = { Value: number; }
+export type FileId = { Value: number; }
+export type FileVersion = { Value: number; }
 export type FileChange = Insert_FileChange | Delete_FileChange | Replace_FileChange;
 export type ObjectDescriptor = Ast_ObjectDescriptor | AstList_ObjectDescriptor | Boolean_ObjectDescriptor | Byte_ObjectDescriptor | Char_ObjectDescriptor
     | Double_ObjectDescriptor | Int16_ObjectDescriptor | Int32_ObjectDescriptor | Int64_ObjectDescriptor
@@ -71,8 +71,13 @@ export type CompletionElem = Literal_CompletionElem | Symbol_CompletionElem;
                     outFile.Write($" }}\r\n");
                 });
 
+                
+                //var enumStr = string.Join("\r\n, ", types.Select(x => $"{x.typeName} = {x.MsgId}"));
+                //outFile.Write($"export enum MsgEnum {{ {enumStr} }};");
+
                 types.ForEach(x =>
                 {
+                    //outFile.Write($@"export type {x.typeName}MsgId = {x.MsgId};");
                     outFile.Write($@"export interface {x.typeName} {{ ");
                     outFile.Write($@"MsgId: {x.MsgId}; ");
                     outFile.Write(string.Join("", x.type.BaseType.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
@@ -245,7 +250,7 @@ export function GetDeserializer(msg: Msg.Message): DesFun[] {{
 				else if (t == typeof(long)
 						|| t == typeof(ulong)) return $"retStack.push((buf, stack) => {{ {pName} = new Int64(buf).valueOf(); return stack; }});";
 
-				else if (t == typeof(bool)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readUInt8(0)[0] === 1; return stack; }});";
+				else if (t == typeof(bool)) return $"retStack.push((buf, stack) => {{ {pName} = buf.readUInt8(0) === 1; return stack; }});";
 
 				else if (new[] { "SolutionId"
 								, "FileId"
