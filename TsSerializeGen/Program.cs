@@ -144,7 +144,8 @@ export function Serialize(msg: Message): Buffer {{
 
                 deSerFile.Write(@"import * as Msg from './NitraMessages';
 import Int64 = require('node-int64');
-import { DesFun, GetStringArrayDeserializer, cast, StringDeserializer } from './deserializers';
+import { DesFun, GetStringArrayDeserializer, cast, StringDeserializer, GetCompletionElemArrayDeserializer
+        , GetObjectDescriptorArrayDeserializer, GetFileChangeArrayDeserializer } from './deserializers';
 ");
 
                 deSerFile.Write($@"
@@ -293,9 +294,7 @@ retStack.push((buf,stack) => {{
 retStack.push((buf,stack) => {{
 	let length = buf.readInt32LE(0);
 	{pName} = [];
-	for (let i = 0; i < length; i++) {{
-		stack.push(...GetDeserializer({pName}[i]));
-	}}
+		stack.push(...Get{arrType.Name}ArrayDeserializer({pName}, length));
 	return stack;
 }});
 ";
