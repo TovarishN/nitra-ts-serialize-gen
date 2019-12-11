@@ -139,7 +139,7 @@ export function Serialize(msg: Message): Buffer {{
             var enums = asm.GetExportedTypes()
                 .Where(x => x.IsEnum);
 
-            using (var deSerFile = new StreamWriter(File.Create("C:\\work\\nitra-vscode\\src\\nitra\\pipe\\NitraDeSerialize.ts")))
+            using (var deSerFile = new StreamWriter(File.Create("C:\\work\\nitra-vscode\\src\\nitra\\pipe\\NitraDeserialize.ts")))
             {
 
                 deSerFile.Write(@"import * as Msg from './NitraMessages';
@@ -279,6 +279,7 @@ export function PushDeserializer(msg: Msg.Message, pile: FunPile): void {{
 pile.curPush((buf,pile) => {{
 	let length = buf.readInt32LE(0);
 	{pName} = [];
+    if(length > 0) pile.raise();
 	for (let i = 0; i < length; i++) {{
 		{pName}.push(<Msg.{typeDict[arrType].typeName}>{{ MsgId: {typeDict[arrType].MsgId} }});
 		PushDeserializer({pName}[i], pile);
@@ -292,6 +293,7 @@ pile.curPush((buf,pile) => {{
 						var ret = $@"
 pile.curPush((buf,pile) => {{
 	let length = buf.readInt32LE(0);
+    if(length > 0) pile.raise();
 	{pName} = [];
 		Push{arrType.Name}ArrayDeserializer({pName}, length, pile);
 }});
@@ -304,6 +306,7 @@ pile.curPush((buf,pile) => {{
 pile.curPush((buf,pile) => {{
 	let length = buf.readInt32LE(0);
 	{pName} = [];
+    if(length > 0) pile.raise();
 	for (let i = 0; i < length; i++) {{
 		PushStringArrayDeserializer({pName}, i, pile);
 	}}
